@@ -6,7 +6,8 @@ WORKDIR /code
 COPY pyproject.toml .python-version uv.lock ./
 RUN uv sync --locked #Dockerfile installs all Python dependencies specified in your pyproject.toml and uv.lock files using the uv package manager. 
 
+COPY ingest_data.py .
 
 # RUN pip install pandas pyarrow
 COPY pipeline.py .
-ENTRYPOINT ["uv", "run", "python", "pipeline.py"]
+ENTRYPOINT ["uv", "run", "python", "ingest_data.py"]
