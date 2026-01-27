@@ -2,6 +2,11 @@
 *.csv
 *.parquet
 
+# Also ignore in pipeline/ subdirectory
+pipeline/*.csv
+pipeline/*.parquet
+pipeline/green_taxi_notebook.ipynb
+
 # Ignore green_taxi_notebook.ipynb
 green_taxi_notebook.ipynb
 # Byte-compiled / optimized / DLL files
