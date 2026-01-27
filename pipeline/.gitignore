@@ -1,1 +1,6 @@
-output_day_*.parquet
+# Ignore CSV and Parquet data files
+*.csv
+*.parquet
+
+# Ignore green_taxi_notebook.ipynb
+green_taxi_notebook.ipynb
