@@ -5,6 +5,10 @@ import argparse
 import pandas as pd
 from sqlalchemy import create_engine
 from tqdm.auto import tqdm
+import pyarrow.parquet as pq
+import pyarrow.dataset as ds
+import os
+import requests
 
 dtype = {
     "VendorID": "Int64",
@@ -31,27 +35,57 @@ parse_dates = [
 ]
 
 def run(pg_user, pg_pass, pg_host, pg_port, pg_db, year, month):
-    url_prefix = 'https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/'
-    url = f'{url_prefix}/yellow_tripdata_{year:04d}-{month:02d}.csv.gz'
+    # Decide file format and URL
+    if (year > 2022) or (year == 2022 and month > 12):
+        # Parquet files for newer years
+        url = f'https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year:04d}-{month:02d}.parquet'
+        file_format = 'parquet'
+    else:
+        # CSV files for older years
+        url_prefix = 'https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/'
+        url = f'{url_prefix}/yellow_tripdata_{year:04d}-{month:02d}.csv.gz'
+        file_format = 'csv'
+
     engine = create_engine(f'postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}')
-
     target_table = 'yellow_taxi_data'
-    chunksize = 100000
 
-    df_iter = pd.read_csv(
-        url,
-        dtype=dtype,
-        parse_dates=parse_dates,
-        iterator=True,
-        chunksize=chunksize
-    )
-
-    first = True
-    for df_chunk in tqdm(df_iter):
-        if first:
-            df_chunk.head(n=0).to_sql(name=target_table, con=engine, if_exists='replace')
-            first = False
-        df_chunk.to_sql(name=target_table, con=engine, if_exists='append')
+    if file_format == 'csv':
+        chunksize = 100000
+        df_iter = pd.read_csv(
+            url,
+            dtype=dtype,
+            parse_dates=parse_dates,
+            iterator=True,
+            chunksize=chunksize
+        )
+        first = True
+        for df_chunk in tqdm(df_iter):
+            if first:
+                df_chunk.head(n=0).to_sql(name=target_table, con=engine, if_exists='replace')
+                first = False
+            df_chunk.to_sql(name=target_table, con=engine, if_exists='append')
+    else:
+        # Download Parquet file locally before chunked processing
+        local_filename = f"yellow_tripdata_{year:04d}-{month:02d}.parquet"
+        if not os.path.exists(local_filename):
+            print(f"Downloading {url} to {local_filename}...")
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(local_filename, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+        else:
+            print(f"Using existing local file: {local_filename}")
+        # Now process the local file in chunks
+        parquet_file = pq.ParquetFile(local_filename)
+        batch_size = 100_000
+        first = True
+        for batch in tqdm(parquet_file.iter_batches(batch_size=batch_size)):
+            df_chunk = pd.DataFrame(batch.to_pandas())
+            if first:
+                df_chunk.head(n=0).to_sql(name=target_table, con=engine, if_exists='replace', index=False)
+                first = False
+            df_chunk.to_sql(name=target_table, con=engine, if_exists='append', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Ingest NY Taxi data to Postgres")

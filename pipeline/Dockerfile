@@ -10,4 +10,12 @@ COPY ingest_data.py .
 
 # RUN pip install pandas pyarrow
 COPY pipeline.py .
-ENTRYPOINT ["uv", "run", "python", "ingest_data.py"]
+COPY load_green_and_zones.py .
+# Copy green trip data and taxi_zone_lookup.csv if present
+COPY green_tripdata* .
+COPY taxi_zone_lookup.csv .
+
+# Add entrypoint script to run both scripts
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh"]
